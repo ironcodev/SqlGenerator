@@ -9,7 +9,9 @@ namespace SqlGenerator.Services
 {
     public class SqlGeneratorSimple : ISqlGenerator
     {
-        public SqlGeneratorSimple()
+		public static string ObjectSeparator => new string('-', 100) + "\n";
+
+		public SqlGeneratorSimple()
         { }
 		public SqlGeneratorSimple(ILogger logger): this(logger, null)
 		{ }
@@ -160,7 +162,7 @@ namespace SqlGenerator.Services
                                     {
 										case GenerationType.Create:
 											text = GetText(schema, name, out error);
-											text += "\n" + new string('-', 100);
+											text += "\n" + ObjectSeparator;
 											break;
 										case GenerationType.Drop:
 											text = $"drop {SqlGeneratorHelper.GetLogicalType(nativeType)} {schema}.{name}";
@@ -173,7 +175,7 @@ if exists (select 1 from sys.all_objects where name='{name}' and schema_id = sch
 go
 ";
 											text += GetText(schema, name, out error);
-											text += "\n" + new string('-', 100);
+											text += "\n" + ObjectSeparator;
 											break;
                                     }
 
