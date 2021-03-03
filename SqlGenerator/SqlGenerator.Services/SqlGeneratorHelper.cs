@@ -99,6 +99,20 @@ namespace SqlGenerator.Services
 
                     break;
                 }
+
+                if (type == typeof(SqlViewType))
+                {
+                    result = "VIEW";
+
+                    break;
+                }
+
+                if (type == typeof(SqlTriggerType))
+                {
+                    result = "SQL_TRIGGER";
+
+                    break;
+                }
             } while (false);
 
             return result;
