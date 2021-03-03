@@ -1,7 +1,7 @@
 # SqlGenerator
 This is a tool to generate scripts for objects in SQL Server databases.
 
-Current Version = 1.1.0
+Current Version = 1.1.4
 
 Usage:
 ```
@@ -23,7 +23,7 @@ sqlgen.exe [args]
             Udf: Scaler, Table, Inline, Clr, Aggregate, UserDefined (default), All
             Trigger: Database (default), Server, All
             Type: Scaler, Table, Clr, Extended, UserDefined (default), All
-            View: Sql (default), All,
+            View: Sql (default), All
             Constraint: PrimaryKey, ForeignKey, Default, AllButPk (default), All
             Index: Clustered, NoneClustered, UniqueNoneClustered, ColumnStore, FullText, SelectiveXml, Spatial, Xml, AllButClustered (default), All
             Audit: DatabaseAuditSpec, Server, ServerAuditSpec, All (default)
