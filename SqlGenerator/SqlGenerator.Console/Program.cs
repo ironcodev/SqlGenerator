@@ -41,7 +41,7 @@ namespace SqlGenerator.Console
                 Logger.Warn(data);
             }
         }
-        static string Version => "1.1.0";
+        static string Version => "1.1.1";
         static void Help()
         {
             Log($@"SQL Script Generator v{Version}
@@ -248,7 +248,7 @@ Example:
 
                         if (logger == null)
                         {
-                            logger = new FileLogger { FileName = "sqlgen.log", Path = AppDomain.CurrentDomain.BaseDirectory };
+                            logger = new FileLogger { FileName = "sqlgen.log", Path = Environment.CurrentDirectory };
                         }
                         if (writer == null)
                         {
@@ -270,7 +270,7 @@ Example:
                         }
                         if (string.IsNullOrEmpty(target))
                         {
-                            target = AppDomain.CurrentDomain.BaseDirectory;
+                            target = Environment.CurrentDirectory;
                         }
 
                         try
