@@ -41,7 +41,7 @@ namespace SqlGenerator.Console
                 Logger.Warn(data);
             }
         }
-        static string Version => "1.1.1";
+        static string Version => "1.1.2";
         static void Help()
         {
             Log($@"SQL Script Generator v{Version}

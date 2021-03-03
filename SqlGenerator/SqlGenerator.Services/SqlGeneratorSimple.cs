@@ -277,16 +277,7 @@ go
 
 					break;
 				case SqlObjectType.View:
-					var viewType = SqlGeneratorHelper.GetSubType<SqlViewType>(subType);
-
-					if (viewType.HasValue)
-					{
-						GenerateInternal(generateType, type, viewType.Value);
-					}
-					else
-					{
-						Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
-					}
+					GenerateInternal(generateType, type, SqlViewType.Sql);
 
 					break;
 				case SqlObjectType.Trigger:
