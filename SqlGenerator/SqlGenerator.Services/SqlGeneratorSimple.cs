@@ -243,11 +243,11 @@ go
 					}
 					else
 					{
-						var strongSubType = SqlGeneratorHelper.GetSubType<SqlSprocType>(subType);
+						var sprocType = SqlGeneratorHelper.GetSubType<SqlSprocType>(subType);
 
-						if (strongSubType.HasValue)
+						if (sprocType.HasValue)
 						{
-							GenerateInternal(generateType, type, strongSubType.Value);
+							GenerateInternal(generateType, type, sprocType.Value);
 						}
 						else
                         {
@@ -263,16 +263,42 @@ go
 					}
 					else
 					{
-						var strongSubType = SqlGeneratorHelper.GetSubType<SqlUdfType>(subType);
+						var udfType = SqlGeneratorHelper.GetSubType<SqlUdfType>(subType);
 
-						if (strongSubType.HasValue)
+						if (udfType.HasValue)
 						{
-							GenerateInternal(generateType, type, strongSubType.Value);
+							GenerateInternal(generateType, type, udfType.Value);
 						}
 						else
 						{
 							Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
 						}
+					}
+
+					break;
+				case SqlObjectType.View:
+					var viewType = SqlGeneratorHelper.GetSubType<SqlViewType>(subType);
+
+					if (viewType.HasValue)
+					{
+						GenerateInternal(generateType, type, viewType.Value);
+					}
+					else
+					{
+						Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
+					}
+
+					break;
+				case SqlObjectType.Trigger:
+					var triggerType = SqlGeneratorHelper.GetSubType<SqlTriggerType>(subType);
+
+					if (triggerType.HasValue)
+					{
+						GenerateInternal(generateType, type, triggerType.Value);
+					}
+					else
+					{
+						Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
 					}
 
 					break;

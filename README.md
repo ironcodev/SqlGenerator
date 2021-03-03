@@ -1,7 +1,7 @@
 # SqlGenerator
 This is a tool to generate scripts for objects in SQL Server databases.
 
-Current Version = 1.0.0
+Current Version = 1.1.0
 
 Usage:
 ```
@@ -41,4 +41,4 @@ Example
     sqlgen.exe -c ""Server=.;Database=MyDb;User Id=myuser;Password=mypass"" -t Sproc -w console
 ```
 
-Currently, the tool only supports generating SPROCs and UDFs.
+Currently, the tool only supports generating SPROCs, UDFs, Views and Triggers.
