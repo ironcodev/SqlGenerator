@@ -161,7 +161,13 @@ namespace SqlGenerator.Services
 									switch (generateType)
                                     {
 										case GenerationType.Create:
-											text = GetText(schema, name, out error);
+											text = @"
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+" + GetText(schema, name, out error);
 											text += "\n" + ObjectSeparator;
 											break;
 										case GenerationType.Drop:
@@ -170,6 +176,11 @@ namespace SqlGenerator.Services
 											break;
 										case GenerationType.DropCreate:
 											text = $@"
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
 if exists (select 1 from sys.all_objects where name='{name}' and schema_id = schema_id('{schema}'))
 	drop {SqlGeneratorHelper.GetLogicalType(nativeType)} {schema}.{name}
 go
