@@ -20,14 +20,14 @@ namespace SqlGenerator.Services
 			Logger = logger;
 			Writer = writer;
 		}
-		private SqlGeneratorOptions options;
-        public SqlGeneratorOptions Options
+		private SqlGeneratorOptionsBase options;
+        public SqlGeneratorOptionsBase Options
         {
             get
             {
                 if (options == null)
                 {
-                    options = new SqlGeneratorOptions();
+                    options = new SqlGeneratorOptionsDefault();
                 }
 
                 return options;
@@ -71,7 +71,17 @@ namespace SqlGenerator.Services
 				writer = value;
 			}
 		}
-		string GetText(string schema, string name, out bool error)
+		private void InitDatabase(SqlConnection con)
+        {
+			if (!string.IsNullOrEmpty(Options.Database))
+			{
+				var cmd = new SqlCommand("use [" + Options.Database.Replace("'", "''") + "]", con);
+
+				cmd.ExecuteNonQuery();
+			}
+		}
+        #region Generate
+        string GetText(SqlObjectType type, string schema, string name, out bool error)
 		{
 			var result = "";
 
@@ -79,36 +89,69 @@ namespace SqlGenerator.Services
 
 			try
 			{
-				using (var con = new SqlConnection(Options.ConnectionString))
-				{
-					using (var cmd = new SqlCommand($"EXEC sp_helptext N'{schema}.{name}';", con))
-					{
-						cmd.CommandType = CommandType.Text;
-						con.Open();
-
-						if (!string.IsNullOrEmpty(Options.Database))
-                        {
-							var cmddb = new SqlCommand("use " + Options.Database, con);
-							cmddb.ExecuteNonQuery();
-                        }
-
-						var sb = new StringBuilder();
-
-						using (var reader = cmd.ExecuteReader())
+				switch (type)
+                {
+					case SqlObjectType.Table:
+						using (var con = new SqlConnection(Options.ConnectionString))
 						{
-							while (reader.Read())
+							using (var cmd = new SqlCommand($"exec sp_GetDDL @name, 0;", con))
 							{
-								sb.Append(reader[0]?.ToString());
+								cmd.CommandType = CommandType.Text;
+								cmd.Parameters.AddWithValue("@name", $"[{schema}].[{name}]");
+								con.Open();
+
+								InitDatabase(con);
+
+								var sb = new StringBuilder();
+
+								using (var reader = cmd.ExecuteReader())
+								{
+									while (reader.Read())
+									{
+										sb.Append(reader["Item"]?.ToString());
+									}
+								}
+
+								sb.Append("\r\nGO\r\n");
+
+								result = sb.ToString();
 							}
 						}
 
-						sb.Append("\r\nGO\r\n");
+						error = false;
 
-						result = sb.ToString();
-					}
-				}
+						break;
+					default:
+						using (var con = new SqlConnection(Options.ConnectionString))
+						{
+							using (var cmd = new SqlCommand($"EXEC sp_helptext @name;", con))
+							{
+								cmd.CommandType = CommandType.Text;
+								cmd.Parameters.AddWithValue("@name", $"[{schema}].[{name}]");
+								con.Open();
 
-				error = false;
+								InitDatabase(con);
+								
+								var sb = new StringBuilder();
+
+								using (var reader = cmd.ExecuteReader())
+								{
+									while (reader.Read())
+									{
+										sb.Append(reader[0]?.ToString());
+									}
+								}
+
+								sb.Append("\r\nGO\r\n");
+
+								result = sb.ToString();
+							}
+						}
+
+						error = false;
+						
+						break;
+                }
 			}
 			catch (Exception e)
 			{
@@ -119,12 +162,12 @@ namespace SqlGenerator.Services
 		}
 		void CreateDir(string path)
 		{
-			if (!Directory.Exists(Options.TargetPath + path))
+			if (!Directory.Exists(Options.OutputPath + path))
 			{
-				Directory.CreateDirectory(Options.TargetPath + path);
+				Directory.CreateDirectory(Options.OutputPath + path);
 			}
 		}
-		private void Generate(string path, GenerationType generateType, string nativeType)
+		private void Generate(string path, GenerationType generateType, SqlObjectType type, string nativeType, string keyword)
 		{
 			try
 			{
@@ -136,16 +179,17 @@ namespace SqlGenerator.Services
 
 					using (var con = new SqlConnection(Options.ConnectionString))
 					{
-						using (var cmd = new SqlCommand($"select schema_name(schema_id), name from sys.all_objects where type_desc=N'{nativeType}' and is_ms_shipped = 0", con))
+						using (var cmd = new SqlCommand($@" select schema_name(schema_id), name from sys.all_objects
+															where	type_desc=@nativeType
+																	and is_ms_shipped = 0
+																	and (name like '%' + @keyword + '%' or len(rtrim(ltrim(isnull(@keyword, '')))) = 0)", con))
 						{
 							cmd.CommandType = CommandType.Text;
+							cmd.Parameters.AddWithValue("@nativeType", nativeType);
+							cmd.Parameters.AddWithValue("@keyword", keyword);
 							con.Open();
 
-							if (!string.IsNullOrEmpty(Options.Database))
-							{
-								var cmddb = new SqlCommand("use " + Options.Database, con);
-								cmddb.ExecuteNonQuery();
-							}
+							InitDatabase(con);
 
 							var sb = new StringBuilder();
 
@@ -167,7 +211,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
-" + GetText(schema, name, out error);
+" + GetText(type, schema, name, out error);
 											text += "\n" + ObjectSeparator;
 											break;
 										case GenerationType.Drop:
@@ -185,7 +229,7 @@ if exists (select 1 from sys.all_objects where name='{name}' and schema_id = sch
 	drop {SqlGeneratorHelper.GetLogicalType(nativeType)} {schema}.{name}
 go
 ";
-											text += GetText(schema, name, out error);
+											text += GetText(type, schema, name, out error);
 											text += "\n" + ObjectSeparator;
 											break;
                                     }
@@ -195,7 +239,7 @@ go
 										Writer.Options = new FileScriptWriterOptions
 										{
 											FileName = schema + "." + name + ".sql",
-											Path = Options.TargetPath + path,
+											Path = Options.OutputPath + path,
 											OverwriteExisting = Options.OverwriteExisting
 										};
 
@@ -222,28 +266,36 @@ go
 			}
 			catch (Exception e)
 			{
-				Logger.Danger(e, $"Generate('{path}', '{nativeType}') Error");
+				Logger.Danger(e, $"Generate('{path}', '{nativeType}', '{keyword}') Error");
 			}
 		}
-		private void GenerateInternal(GenerationType generateType, SqlObjectType type, object subType)
+		private void GenerateInternal(GenerationType generateType, SqlObjectType type, object subType, string keyword)
         {
 			var nativeType = SqlGeneratorHelper.GetNativeType(subType);
-			var path = Options.GetPath(type, subType);
 
-			CreateDir(path);
+			if (string.IsNullOrEmpty(nativeType))
+			{
+				Logger.Warn($"Warning: {type}.{subType} is not supported yet. Generating script for {type}.{subType} objects skipped.");
+			}
+			else
+			{
+				var path = Options.GetPath(type, subType);
 
-			Generate(path, generateType, nativeType);
+				CreateDir(path);
+
+				Generate(path, generateType, type, nativeType, keyword);
+			}
 		}
-		private void GenerateAll(GenerationType generateType, SqlObjectType type, Type subType)
+		private void GenerateAll(GenerationType generateType, SqlObjectType type, Type subType, string keyword)
 		{
 			var subTypes = Enum.GetValues(subType);
 
             foreach (var value in subTypes)
             {
-				GenerateInternal(generateType, type, value);
+				GenerateInternal(generateType, type, value, keyword);
             }
 		}
-		public void Generate(GenerationType generateType, SqlObjectType type, object subType = null)
+		public void Generate(GenerationType generateType, SqlObjectType type, object subType = null, string keyword = "")
         {
 			var strSubType = subType?.ToString();
 
@@ -252,7 +304,7 @@ go
 				case SqlObjectType.Sproc:
 					if (string.IsNullOrEmpty(strSubType) || string.Compare(strSubType, "all", true) == 0)
 					{
-						GenerateAll(generateType, type, typeof(SqlSprocType));
+						GenerateAll(generateType, type, typeof(SqlSprocType), keyword);
 					}
 					else
 					{
@@ -260,7 +312,7 @@ go
 
 						if (sprocType.HasValue)
 						{
-							GenerateInternal(generateType, type, sprocType.Value);
+							GenerateInternal(generateType, type, sprocType.Value, keyword);
 						}
 						else
                         {
@@ -272,7 +324,7 @@ go
 				case SqlObjectType.Udf:
 					if (string.IsNullOrEmpty(strSubType) || string.Compare(strSubType, "all", true) == 0)
 					{
-						GenerateAll(generateType, type, typeof(SqlUdfType));
+						GenerateAll(generateType, type, typeof(SqlUdfType), keyword);
 					}
 					else
 					{
@@ -280,7 +332,7 @@ go
 
 						if (udfType.HasValue)
 						{
-							GenerateInternal(generateType, type, udfType.Value);
+							GenerateInternal(generateType, type, udfType.Value, keyword);
 						}
 						else
 						{
@@ -289,8 +341,46 @@ go
 					}
 
 					break;
+				case SqlObjectType.Table:
+					var sp_getDDL_exists = false;
+
+					using (var con = new SqlConnection(Options.ConnectionString))
+					{
+						using (var cmd = new SqlCommand($"use master;select case when exists(select 1 from sys.procedures where name = 'sp_GetDDL') then 1 else 0 end", con))
+						{
+							con.Open();
+							sp_getDDL_exists = ((int)cmd.ExecuteScalar()) == 1;
+						}
+					}
+
+					if (!sp_getDDL_exists)
+					{
+						Logger.Warn($"sp_GetDDL was not found. It is required to generate scripts of Tables. You can download it from https://github.com/ironcodev/SqlGenerator");
+					}
+					else
+                    {
+						if (string.IsNullOrEmpty(strSubType) || string.Compare(strSubType, "all", true) == 0)
+						{
+							GenerateAll(generateType, type, typeof(SqlTableType), keyword);
+						}
+						else
+						{
+							var tableType = SqlGeneratorHelper.GetSubType<SqlTableType>(subType);
+
+							if (tableType.HasValue)
+							{
+								GenerateInternal(generateType, type, tableType.Value, keyword);
+							}
+							else
+							{
+								Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
+							}
+						}
+					}
+
+					break;
 				case SqlObjectType.View:
-					GenerateInternal(generateType, type, SqlViewType.Sql);
+					GenerateInternal(generateType, type, SqlViewType.Sql, keyword);
 
 					break;
 				case SqlObjectType.Trigger:
@@ -298,7 +388,7 @@ go
 
 					if (triggerType.HasValue)
 					{
-						GenerateInternal(generateType, type, triggerType.Value);
+						GenerateInternal(generateType, type, triggerType.Value, keyword);
 					}
 					else
 					{
@@ -308,5 +398,184 @@ go
 					break;
 			}
 		}
-    }
+        #endregion
+        #region Count
+        private int Count(string nativeType, string keyword)
+		{
+			var result = -1;
+
+			try
+			{
+				Logger.Log($"-------------------------------------------------------------");
+
+				if (!string.IsNullOrEmpty(nativeType))
+				{
+					Logger.Log($"Counting {nativeType} objects ...");
+
+					using (var con = new SqlConnection(Options.ConnectionString))
+					{
+						using (var cmd = new SqlCommand($@" select count(*) from sys.all_objects
+															where	type_desc=@nativeType
+																	and is_ms_shipped = 0
+																	and (name like '%' + @keyword + '%' or len(rtrim(ltrim(isnull(@keyword, '')))) = 0)", con))
+						{
+							cmd.CommandType = CommandType.Text;
+							cmd.Parameters.AddWithValue("@nativeType", nativeType);
+							cmd.Parameters.AddWithValue("@keyword", keyword);
+							con.Open();
+
+							InitDatabase(con);
+							
+							result = (int)cmd.ExecuteScalar();
+						}
+					}
+				}
+				else
+				{
+					Logger.Warn($"no native type given.");
+				}
+			}
+			catch (Exception e)
+			{
+				Logger.Danger(e, $"Count(''{nativeType}', '{keyword}') Error");
+			}
+
+			return result;
+		}
+		private KeyValuePair<string, int> CountInternal(SqlObjectType type, object subType, string keyword)
+		{
+			var nativeType = SqlGeneratorHelper.GetNativeType(subType);
+			KeyValuePair<string, int> result;
+
+			if (string.IsNullOrEmpty(nativeType))
+			{
+				result = new KeyValuePair<string, int>(subType.ToString(), 0);
+
+				Logger.Warn($"Warning: {type}.{subType} is not supported yet. Counting {type}.{subType} objects skipped.");
+			}
+			else
+			{
+				var count = Count(nativeType, keyword);
+				result = new KeyValuePair<string, int>(subType.ToString(), count);
+			}
+
+			return result;
+		}
+		private Dictionary<string, int> CountAll(SqlObjectType type, Type subType, string keyword)
+		{
+			var result = new Dictionary<string, int>();
+			var subTypes = Enum.GetValues(subType);
+
+			foreach (var value in subTypes)
+			{
+				var kv = CountInternal(type, value, keyword);
+
+				result.Add(kv.Key, kv.Value);
+			}
+
+			return result;
+		}
+		public Dictionary<string, int> Count(SqlObjectType type, object subType = null, string keyword = "")
+		{
+			var result = new Dictionary<string, int>();
+			var strSubType = subType?.ToString();
+			KeyValuePair<string, int> kv;
+
+			switch (type)
+			{
+				case SqlObjectType.Sproc:
+					if (string.IsNullOrEmpty(strSubType) || string.Compare(strSubType, "all", true) == 0)
+					{
+						result = CountAll(type, typeof(SqlSprocType), keyword);
+					}
+					else
+					{
+						var sprocType = SqlGeneratorHelper.GetSubType<SqlSprocType>(subType);
+
+						if (sprocType.HasValue)
+						{
+							kv = CountInternal(type, sprocType.Value, keyword);
+
+							result.Add(kv.Key, kv.Value);
+						}
+						else
+						{
+							Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
+						}
+					}
+
+					break;
+				case SqlObjectType.Udf:
+					if (string.IsNullOrEmpty(strSubType) || string.Compare(strSubType, "all", true) == 0)
+					{
+						result = CountAll(type, typeof(SqlUdfType), keyword);
+					}
+					else
+					{
+						var udfType = SqlGeneratorHelper.GetSubType<SqlUdfType>(subType);
+
+						if (udfType.HasValue)
+						{
+							kv = CountInternal(type, udfType.Value, keyword);
+
+							result.Add(kv.Key, kv.Value);
+						}
+						else
+						{
+							Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
+						}
+					}
+
+					break;
+				case SqlObjectType.Table:
+					{
+						if (string.IsNullOrEmpty(strSubType) || string.Compare(strSubType, "all", true) == 0)
+						{
+							result = CountAll(type, typeof(SqlTableType), keyword);
+						}
+						else
+						{
+							var tableType = SqlGeneratorHelper.GetSubType<SqlTableType>(subType);
+
+							if (tableType.HasValue)
+							{
+								kv = CountInternal(type, tableType.Value, keyword);
+
+								result.Add(kv.Key, kv.Value);
+							}
+							else
+							{
+								Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
+							}
+						}
+					}
+
+					break;
+				case SqlObjectType.View:
+					kv = CountInternal(type, SqlViewType.Sql, keyword);
+
+					result.Add(kv.Key, kv.Value);
+
+					break;
+				case SqlObjectType.Trigger:
+					var triggerType = SqlGeneratorHelper.GetSubType<SqlTriggerType>(subType);
+
+					if (triggerType.HasValue)
+					{
+						kv = CountInternal(type, triggerType.Value, keyword);
+
+						result.Add(kv.Key, kv.Value);
+					}
+					else
+					{
+						Logger.Danger($"No subtype specified or subtype ('{subType}') is invalid.");
+					}
+
+					break;
+			}
+
+			return result;
+		}
+		#endregion
+	}
 }

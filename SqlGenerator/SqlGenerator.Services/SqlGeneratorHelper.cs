@@ -87,14 +87,14 @@ namespace SqlGenerator.Services
 
                 if (type == typeof(SqlTableType))
                 {
-                    var udfType = (SqlTableType)subType;
+                    var tableType = (SqlTableType)subType;
 
-                    switch (udfType)
+                    switch (tableType)
                     {
                         case SqlTableType.Sql: result = "USER_TABLE"; break;
-                        case SqlTableType.External: result = "USER_TABLE"; break;
-                        case SqlTableType.File: result = "USER_TABLE"; break;
-                        case SqlTableType.Graph: result = "USER_TABLE"; break;
+                        case SqlTableType.External: result = ""; break;
+                        case SqlTableType.File: result = ""; break;
+                        case SqlTableType.Graph: result = ""; break;
                     }
 
                     break;

@@ -8,7 +8,8 @@ namespace SqlGenerator.Services
     {
         ILogger Logger { get; set; }
         IScriptWriter Writer { get; set; }
-        SqlGeneratorOptions Options { get; set; }
-        void Generate(GenerationType generateType, SqlObjectType type, object subType = null);
+        SqlGeneratorOptionsBase Options { get; set; }
+        void Generate(GenerationType generateType, SqlObjectType type, object subType = null, string keyword = "");
+        Dictionary<string, int> Count(SqlObjectType type, object subType = null, string keyword = "");
     }
 }
