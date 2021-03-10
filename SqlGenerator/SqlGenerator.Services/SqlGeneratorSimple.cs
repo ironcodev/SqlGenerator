@@ -91,6 +91,37 @@ namespace SqlGenerator.Services
 			{
 				switch (type)
                 {
+					case SqlObjectType.Default:
+						using (var con = new SqlConnection(Options.ConnectionString))
+						{
+							using (var cmd = new SqlCommand($@"
+select
+'
+IF EXISTS(SELECT 1 FROM sys.default_constraints WHERE name = ''' + dc.name + ''' AND schema_id = ' + CAST(dc.schema_id AS VARCHAR(100)) + ')
+	ALTER TABLE [' + SCHEMA_NAME(t.schema_id) + '].[' + t.name + '] DROP CONSTRAINT [' + dc.name + ']
+GO
+ALTER TABLE [' + SCHEMA_NAME(t.schema_id) + '].[' + t.name + '] ADD CONSTRAINT [' + dc.name + ']  DEFAULT ' + dc.definition + ' FOR [' + c.name + ']
+GO
+'
+FROM			sys.default_constraints	dc
+	INNER JOIN	sys.tables				t ON dc.parent_object_id = t.object_id
+	INNER JOIN	sys.columns				c ON dc.parent_column_id = c.column_id and c.object_id = dc.parent_object_id
+WHERE dc.name = @name", con))
+							{
+								cmd.CommandType = CommandType.Text;
+								cmd.Parameters.AddWithValue("@name", name);
+								cmd.Parameters.AddWithValue("@schema", schema);
+								con.Open();
+
+								InitDatabase(con);
+
+								result = cmd.ExecuteScalar()?.ToString();
+							}
+						}
+
+						error = !string.IsNullOrEmpty(result);
+
+						break;
 					case SqlObjectType.Table:
 						using (var con = new SqlConnection(Options.ConnectionString))
 						{
