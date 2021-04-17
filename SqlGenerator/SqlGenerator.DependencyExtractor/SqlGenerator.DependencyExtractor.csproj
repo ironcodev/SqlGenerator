@@ -4,15 +4,15 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{95FDC3F1-C1FE-4B10-90F0-FD23AAB3D610}</ProjectGuid>
+    <ProjectGuid>{193BB98A-2E45-475B-808E-DCA763AD382F}</ProjectGuid>
     <OutputType>Exe</OutputType>
-    <RootNamespace>SqlGenerator.Console</RootNamespace>
-    <AssemblyName>SqlGenerator.Console</AssemblyName>
+    <RootNamespace>SqlGenerator.DependencyExtractor</RootNamespace>
+    <AssemblyName>SqlGenerator.DependencyExtractor</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
-    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <PublishUrl>publish\</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Disk</InstallFrom>
@@ -24,7 +24,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>2.0.0.%2a</ApplicationVersion>
+    <ApplicationVersion>1.0.1.%2a</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -66,15 +66,15 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\SqlGenerator.Services\SqlGenerator.Services.csproj">
-      <Project>{9168b073-c4a3-4c5a-a2e6-65a96b60f8e8}</Project>
-      <Name>SqlGenerator.Services</Name>
-    </ProjectReference>
+    <PackageReference Include="Newtonsoft.Json">
+      <Version>13.0.1</Version>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="System.Data.SqlClient">
-      <Version>4.8.2</Version>
-    </PackageReference>
+    <ProjectReference Include="..\SqlGenerator.Extensions\SqlGenerator.Extensions.csproj">
+      <Project>{60ef024b-8423-4c1d-8c37-60e9217d0426}</Project>
+      <Name>SqlGenerator.Extensions</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.7.2">

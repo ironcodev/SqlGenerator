@@ -99,7 +99,9 @@ AS
 BEGIN
   SET NOCOUNT ON;
   DECLARE     @TBLNAME                VARCHAR(200),
+			  @QTBLNAME               VARCHAR(200),
               @SCHEMANAME             VARCHAR(255),
+              @QSCHEMANAME            VARCHAR(255),
               @STRINGLEN              INT,
               @TABLE_ID               INT,
               @FINALSQL               VARCHAR(MAX),
@@ -118,10 +120,11 @@ BEGIN
               @ObjectTypeFound        VARCHAR(255),
               @ObjectDataTypeLen      INT;
 
---##############################################################################
--- INITIALIZE
---##############################################################################
-  SET @input = '';
+	--##############################################################################
+	-- INITIALIZE
+	--##############################################################################
+	
+	SET @input = '';
   --new code: determine whether this proc is marked as a system proc with sp_ms_marksystemobject,
   --which flips the is_ms_shipped bit in sys.objects
   --  SELECT @ISSYSTEMOBJECT = ISNULL(is_ms_shipped,0),@PROCNAME = ISNULL(name,'##sp_GetDDL') FROM sys.objects WHERE OBJECT_ID = @@PROCID
@@ -133,149 +136,158 @@ BEGIN
     SET @PROCNAME = '##sp_GetDDL';
   --SET @TBL =  '[DBO].[WHATEVER1]'
   --does the tablename contain a schema?
-  SET @CrLf =  CHAR(13) + CHAR(10);
-  SELECT @SCHEMANAME = ISNULL(PARSENAME(@TBL,2),'dbo') ,
-         @TBLNAME    = PARSENAME(@TBL,1);
-  SELECT
-    @TBLNAME    = [OBJS].[name],
-    @TABLE_ID   = [OBJS].[object_id]
-  FROM [sys].[objects] [OBJS]
-  WHERE [OBJS].[type]          IN ('S','U')
-    AND [OBJS].[name]          <>  'dtproperties'
-    AND [OBJS].[name]           =  @TBLNAME
-    AND [OBJS].[schema_id] =  SCHEMA_ID(@SCHEMANAME) ;
+  
+	SET @CrLf =  CHAR(13) + CHAR(10)
+  
+	SELECT @SCHEMANAME = ISNULL(PARSENAME(@TBL,2),'dbo') ,
+		 @TBLNAME    = PARSENAME(@TBL,1);
 
- SELECT @ObjectDataTypeLen = MAX(LEN([name])) from [sys].[types];
---##############################################################################
--- Check If TEMP TableName is Valid
---##############################################################################
-  IF LEFT(@TBLNAME,1) = '#'  COLLATE SQL_Latin1_General_CP1_CI_AS
-    BEGIN
-      PRINT '--TEMP TABLE  ' + quotename(@TBLNAME) + '  FOUND';
-      IF OBJECT_ID('tempdb..' + quotename(@TBLNAME)) IS NOT NULL
-        BEGIN
-          PRINT '--GOIN TO TEMP PROCESSING';
-          GOTO TEMPPROCESS;
-        END;
-    END;
-  ELSE
-    BEGIN
-      PRINT '--Non-Temp Table, ' + quotename(@TBLNAME) + ' continue Processing';
-    END;
---##############################################################################
--- Check If TableName is Valid
---##############################################################################
-  IF ISNULL(@TABLE_ID,0) = 0
-    BEGIN
-      --V309 code: see if it is an object and not a table.
-      SELECT
-        @TBLNAME    = [OBJS].[name],
-        @TABLE_ID   = [OBJS].[object_id],
-        @ObjectTypeFound = [OBJS].[type_desc]
-      FROM [sys].[objects] [OBJS]
-      --WHERE [type_desc]     IN('SQL_STORED_PROCEDURE','VIEW','SQL_TRIGGER','AGGREGATE_FUNCTION','SQL_INLINE_TABLE_VALUED_FUNCTION','SQL_TABLE_VALUED_FUNCTION','SQL_SCALAR_FUNCTION','SYNONYMN')
-      WHERE [OBJS].[type]          IN ('P','V','TR','AF','IF','FN','TF','SN')
-        AND [OBJS].[name]          <>  'dtproperties'
-        AND [OBJS].[name]           =  @TBLNAME
-        AND [OBJS].[schema_id] =  SCHEMA_ID(@SCHEMANAME) ;
-      IF ISNULL(@TABLE_ID,0) <> 0  
-        BEGIN
-          --adding a drop statement.
-          --adding a sp_ms_marksystemobject if needed
+	SELECT
+		@TBLNAME    = name,
+		@TABLE_ID   = object_id
+	FROM sys.objects
+	WHERE type          IN ('S','U')
+		AND name          <>  'dtproperties'
+		AND name           =  @TBLNAME
+		AND schema_id =  SCHEMA_ID(@SCHEMANAME) ;
 
-          SELECT @MARKSYSTEMOBJECT = CASE 
-                                       WHEN [OBJS].[is_ms_shipped] = 1 
-                                       THEN '
-GO
---#################################################################################################
---Mark as a system object
-EXECUTE sp_ms_marksystemobject  ''' + quotename(@SCHEMANAME) +'.' + quotename(@TBLNAME) + '''
---#################################################################################################
-' 
-                                       ELSE '
-GO
-' 
-                                     END 
-          FROM [sys].[objects] [OBJS] 
-          WHERE [OBJS].[object_id] = @TABLE_ID;
+	SELECT @ObjectDataTypeLen = MAX(LEN([name])) from [sys].[types];
+ 
+	set @QTBLNAME		= quotename(@TBLNAME)
+	set @QSCHEMANAME	= quotename(@SCHEMANAME)
+	
+	--##############################################################################
+	-- Check If TEMP TableName is Valid
+	--##############################################################################
 
-          --adding a drop statement.
-          --adding a drop statement.
-          IF @ObjectTypeFound = 'SYNONYM'  COLLATE SQL_Latin1_General_CP1_CI_AS
-            BEGIN
-               SELECT @FINALSQL = 
-                'IF EXISTS(SELECT * FROM sys.synonyms WHERE name = ''' 
-                                + [name] 
-                                + ''''
-                                + ' AND base_object_name <> ''' + [base_object_name] + ''')'
-                                + @CrLf
-                                + '  DROP SYNONYM ' + quotename([name]) + ''
-                                + @CrLf
-                                +'GO'
-                                + @CrLf
-                                +'IF NOT EXISTS(SELECT * FROM sys.synonyms WHERE name = ''' 
-                                + [name] 
-                                + ''')'
-                                + @CrLf
-                                + 'CREATE SYNONYM ' + quotename([name]) + ' FOR ' + [base_object_name] +';'
-                                from [sys].[synonyms]
-                                WHERE  [name]   =  @TBLNAME
-                                AND [SCHEMA_ID] =  SCHEMA_ID(@SCHEMANAME);
-            END;
-          ELSE
-            BEGIN
-          SELECT @FINALSQL =
-			case when isnull(@Drop, 0) = 1 then
-			  'IF OBJECT_ID(''' + QUOTENAME(@SCHEMANAME) + '.' + QUOTENAME(@TBLNAME) + ''') IS NOT NULL ' + @CrLf
-			  + 'DROP ' + CASE 
-							WHEN [OBJS].[type] IN ('P')
-							THEN ' PROCEDURE '
-							WHEN [OBJS].[type] IN ('V')
-							THEN ' VIEW      '
-							WHEN [OBJS].[type] IN ('TR')
-							THEN ' TRIGGER   '
-							ELSE ' FUNCTION  '
-						  END 
-						  + QUOTENAME(@SCHEMANAME) + '.' + QUOTENAME(@TBLNAME) + ' ' + @CrLf + 'GO' + @CrLf
-			else '' end
-          + [def].[definition] + @MARKSYSTEMOBJECT
-          FROM [sys].[objects] [OBJS] 
-            INNER JOIN [sys].[sql_modules] [def]
-              ON [OBJS].[object_id] = [def].[object_id]
-          WHERE [OBJS].[type]          IN ('P','V','TR','AF','IF','FN','TF')
-            AND [OBJS].[name]          <>  'dtproperties'
-            AND [OBJS].[name]           =  @TBLNAME
-            AND [OBJS].[schema_id] =  SCHEMA_ID(@SCHEMANAME) ;
-            END;
-          SET @input = @FINALSQL;  
-          
-		PRINT @input
-        SELECT @input AS [Item];
-         RETURN;
-        END;
-      --ELSE
-      --  BEGIN
-      --  SET @FINALSQL = 'Object ' + quotename(@SCHEMANAME) + '.' + quotename(@TBLNAME) + ' does not exist in Database ' + quotename(DB_NAME())   + ' '  
-      --                + CASE 
-      --                    WHEN @ISSYSTEMOBJECT = 0 THEN @CrLf + ' (also note that ' + @PROCNAME + ' is not marked as a system proc and cross db access to sys.tables will fail.)'
-      --                    ELSE ''
-      --                  END
-      --IF LEFT(@TBLNAME,1) = '#' 
-      --  SET @FINALSQL = @FINALSQL + ' OR in The tempdb database.'
-      --SELECT @FINALSQL AS Item;
-      --RETURN 0
-      --  END  
-      
-    END;
---##############################################################################
--- Valid Table, Continue Processing
---##############################################################################
- SELECT 
+	IF LEFT(@TBLNAME,1) = '#'  COLLATE SQL_Latin1_General_CP1_CI_AS
+	BEGIN
+		PRINT '--TEMP TABLE  ' + @QTBLNAME + '  FOUND';
+	  
+		IF OBJECT_ID('tempdb..' + @QTBLNAME) IS NOT NULL
+		BEGIN
+		  PRINT '--GOIN TO TEMP PROCESSING';
+		  
+		  GOTO TEMPPROCESS;
+		END;
+	END;
+	ELSE
+	BEGIN
+		PRINT '--Non-Temp Table, ' + @QTBLNAME + ' continue Processing';
+	END;
+	
+	--##############################################################################
+	-- Check If TableName is Valid
+	--##############################################################################
+
+	IF ISNULL(@TABLE_ID,0) = 0
+	BEGIN
+		--V309 code: see if it is an object and not a table.
+		SELECT
+			@TBLNAME			= name,
+			@TABLE_ID			= object_id,
+			@ObjectTypeFound	= type_desc
+		FROM	sys.objects
+		--WHERE [type_desc]     IN('SQL_STORED_PROCEDURE','VIEW','SQL_TRIGGER','AGGREGATE_FUNCTION','SQL_INLINE_TABLE_VALUED_FUNCTION','SQL_TABLE_VALUED_FUNCTION','SQL_SCALAR_FUNCTION','SYNONYMN')
+		WHERE type        IN ('P','V','TR','AF','IF','FN','TF','SN')
+			AND name      <>  'dtproperties'
+			AND name      =  @TBLNAME
+			AND schema_id =  SCHEMA_ID(@SCHEMANAME)
+			
+		IF ISNULL(@TABLE_ID,0) <> 0  
+		BEGIN
+			--adding a drop statement.
+			--adding a sp_ms_marksystemobject if needed
+
+			SELECT @MARKSYSTEMOBJECT = CASE 
+				   WHEN is_ms_shipped = 1 
+				   THEN '
+			GO
+			--#################################################################################################
+			--Mark as a system object
+			EXECUTE sp_ms_marksystemobject  ''' + @QSCHEMANAME +'.' + @QTBLNAME + '''
+			--#################################################################################################
+			' 
+				   ELSE '
+			GO
+			' 
+				 END 
+			FROM sys.objects WHERE object_id = @TABLE_ID;
+
+			--adding a drop statement.
+			--adding a drop statement.
+			
+			IF @ObjectTypeFound = 'SYNONYM'  COLLATE SQL_Latin1_General_CP1_CI_AS
+			BEGIN
+				SELECT @FINALSQL = 
+				'
+					IF EXISTS(SELECT * FROM sys.synonyms WHERE name = ''' + [name] + ''' AND base_object_name <> ''' + [base_object_name] + ''')
+						DROP SYNONYM ' + quotename([name]) + '
+					GO
+					
+					IF NOT EXISTS(SELECT * FROM sys.synonyms WHERE name = ''' + [name] + ''')
+						CREATE SYNONYM ' + quotename([name]) + ' FOR ' + [base_object_name]
+				from	sys.synonyms
+				WHERE  [name]   =  @TBLNAME
+				AND SCHEMA_ID =  SCHEMA_ID(@SCHEMANAME)
+			END
+			ELSE
+			BEGIN
+				SELECT @FINALSQL =
+					case when isnull(@Drop, 0) = 1 then
+					'IF OBJECT_ID(''' + @QSCHEMANAME + '.' + @QTBLNAME + ''') IS NOT NULL 
+						DROP ' + CASE o.type
+									WHEN 'P'	THEN	' PROCEDURE '
+									WHEN 'V'	THEN	' VIEW      '
+									WHEN 'TR'	THEN	' TRIGGER   '
+									ELSE 				' FUNCTION  '
+								END +
+						@QSCHEMANAME + '.' + @QTBLNAME + ' ' + @CrLf + 'GO' + @CrLf
+					else '' end
+					+ d.definition + @MARKSYSTEMOBJECT
+				FROM			sys.objects		o
+					INNER JOIN	sys.sql_modules	d	ON o.object_id = d.object_id
+				WHERE o.type		IN ('P','V','TR','AF','IF','FN','TF')
+					AND o.name		<>  'dtproperties'
+					AND o.name		=  @TBLNAME
+					AND o.schema_id =  SCHEMA_ID(@SCHEMANAME)
+			END
+			
+			SET @input = @FINALSQL;  
+
+			PRINT @input
+			
+			SELECT @input AS [Item]
+			
+			RETURN
+		
+		END
+		--ELSE
+		--  BEGIN
+		--  SET @FINALSQL = 'Object ' + @QSCHEMANAME + '.' + @QTBLNAME + ' does not exist in Database ' + quotename(DB_NAME())   + ' '  
+		--                + CASE 
+		--                    WHEN @ISSYSTEMOBJECT = 0 THEN @CrLf + ' (also note that ' + @PROCNAME + ' is not marked as a system proc and cross db access to sys.tables will fail.)'
+		--                    ELSE ''
+		--                  END
+		--IF LEFT(@TBLNAME,1) = '#' 
+		--  SET @FINALSQL = @FINALSQL + ' OR in The tempdb database.'
+		--SELECT @FINALSQL AS Item;
+		--RETURN 0
+		--  END  
+	END
+	
+	--##############################################################################
+	-- Valid Table, Continue Processing
+	--##############################################################################
+	
+SELECT 
    @FINALSQL =  case when isnull(@Drop, 0) = 1 then
-					'IF OBJECT_ID(''' + QUOTENAME(@SCHEMANAME) + '.' + QUOTENAME(@TBLNAME) + ''') IS NOT NULL ' + @CrLf
-					  + 'DROP TABLE ' + QUOTENAME(@SCHEMANAME) + '.' + QUOTENAME(@TBLNAME) + ' ' + @CrLf + 'GO' + @CrLf
+					'IF OBJECT_ID(''' + @QSCHEMANAME + '.' + @QTBLNAME + ''') IS NOT NULL
+						DROP TABLE ' + @QSCHEMANAME + '.' + @QTBLNAME + '
+					GO
+					'
 				else '' end
-				  + 'CREATE TABLE ' + QUOTENAME(@SCHEMANAME) + '.' + QUOTENAME(@TBLNAME) + ' ( ';
+				  + 'CREATE TABLE ' + @QSCHEMANAME + '.' + @QTBLNAME + ' ( ';
   --removed invalid code here which potentially selected wrong table--thanks David Grifiths @SSC!
   SELECT
     @STRINGLEN = MAX(LEN([COLS].[name])) + 1
@@ -891,8 +903,8 @@ GROUP  BY
           @EXTENDEDPROPERTIES + @CrLf +
          'EXEC sys.sp_addextendedproperty
           @name = N'''  COLLATE SQL_Latin1_General_CP1_CI_AS + [name] + ''', @value = N'''  COLLATE SQL_Latin1_General_CP1_CI_AS + REPLACE(CONVERT(VARCHAR(MAX),[VALUE]),'''','''''') + ''',
-          @level0type = N''SCHEMA'', @level0name = '  COLLATE SQL_Latin1_General_CP1_CI_AS + quotename(@SCHEMANAME) + ',
-          @level1type = N''TABLE'', @level1name = '  COLLATE SQL_Latin1_General_CP1_CI_AS + quotename(@TBLNAME) + ';'
+          @level0type = N''SCHEMA'', @level0name = '  COLLATE SQL_Latin1_General_CP1_CI_AS + @QSCHEMANAME + ',
+          @level1type = N''TABLE'', @level1name = '  COLLATE SQL_Latin1_General_CP1_CI_AS + @QTBLNAME + ';'
  --SELECT objtype, objname, name, value
   FROM [sys].[fn_listextendedproperty] (NULL, 'schema', @SCHEMANAME, 'table', @TBLNAME, NULL, NULL);
   --OMacoder suggestion for column extended properties http://www.sqlservercentral.com/Forums/FindPost1651606.aspx
@@ -912,10 +924,10 @@ GROUP  BY
          + ''', @value = N''' COLLATE SQL_Latin1_General_CP1_CI_AS
          + REPLACE(convert(varchar(max),[lep].[value]),'''','''''') + ''',
          @level0type = N''SCHEMA'', @level0name = ' COLLATE SQL_Latin1_General_CP1_CI_AS
-         + quotename(@SCHEMANAME) 
+         + @QSCHEMANAME 
          + ',
          @level1type = N''TABLE'', @level1name = ' COLLATE SQL_Latin1_General_CP1_CI_AS
-         + quotename(@TBLNAME) 
+         + @QTBLNAME 
          + ',
          @level2type = N''' COLLATE SQL_Latin1_General_CP1_CI_AS
          + UPPER([obj].[name])  
@@ -966,10 +978,10 @@ TEMPPROCESS:
 --##############################################################################
 SELECT 
   @FINALSQL =  case when isnull(@Drop, 0) = 1 then
-					'IF OBJECT_ID(''tempdb.' + QUOTENAME(@SCHEMANAME) + '.' + QUOTENAME(@TBLNAME) + ''') IS NOT NULL ' + @CrLf
-					+ 'DROP TABLE ' + QUOTENAME(@SCHEMANAME) + '.' + QUOTENAME(@TBLNAME) + ' ' + @CrLf + 'GO' + @CrLf
+					'IF OBJECT_ID(''tempdb.' + @QSCHEMANAME + '.' + @QTBLNAME + ''') IS NOT NULL ' + @CrLf
+					+ 'DROP TABLE ' + @QSCHEMANAME + '.' + @QTBLNAME + ' ' + @CrLf + 'GO' + @CrLf
 				else '' end
-				   + 'CREATE TABLE ' + quotename(@SCHEMANAME) + '.' + quotename(@TBLNAME) + ' ( ';
+				   + 'CREATE TABLE ' + @QSCHEMANAME + '.' + @QTBLNAME + ' ( ';
   --removed invalud cide here which potentially selected wrong table--thansk David Grifiths @SSC!
   SELECT
     @STRINGLEN = MAX(LEN([COLS].[name])) + 1
@@ -1622,9 +1634,9 @@ GROUP  BY
          + REPLACE(convert(varchar(max),[value]),'''','''''') 
          + ''',
          @level0type = N''SCHEMA'', @level0name = '  COLLATE SQL_Latin1_General_CP1_CI_AS
-         + quotename(@SCHEMANAME) + ',
+         + @QSCHEMANAME + ',
          @level1type = N''TABLE'', @level1name = '  COLLATE SQL_Latin1_General_CP1_CI_AS
-         + quotename(@TBLNAME) + ',
+         + @QTBLNAME + ',
          @level2type = N''COLUMN'', @level2name = '  COLLATE SQL_Latin1_General_CP1_CI_AS
          + quotename([objname]) + ';' COLLATE SQL_Latin1_General_CP1_CI_AS
   --SELECT objtype, objname, name, value

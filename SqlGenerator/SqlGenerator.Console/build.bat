@@ -20,6 +20,6 @@ IF "%~1"=="" (
 	
 	xcopy .\Builds\%1 ..\..\Builds\%1 /Y/S > NUL
 	
-	echo Done.
+	echo Finished.
 )
 
