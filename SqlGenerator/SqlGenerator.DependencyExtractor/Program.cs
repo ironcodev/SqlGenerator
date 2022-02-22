@@ -21,15 +21,41 @@ namespace SqlGenerator.DependencyExtractor
             "select", "insert", "update", "from", "join", "inner", "outer", "procedure", "function", "trigger", "where", "varchar", "nvarchar", "int", "decimal", "return", "declare", "set", "go", "end", "alter", "create",
             "view", "delete", "begin", "as", "if", "exists", "and", "or", "null", "isnull", "drop", "returns", "right", "left", "trim", "nocount", "bit", "tinyint", "on", "is", "like", "not", "exec", "over", "order", "by",
             "asc", "desc", "case", "when", "then", "row_number", "group", "having", "pivot", "in", "len", "convert", "cast", "index", "references", "sys", "object_id", "schema_id", "object_name", "type", "off", "datetime",
-            "smalldatetime", "time", "getdate", "else", "float", "while", "cursor", "count", "sum", "min", "max", "avg", "top", "into", "xml", "json", "out", "partition", "ntext", "text", "ansi_nulls", "table", "sys.all_objects",
-            "sys.tables", "sys.procedures", "sys.types", "sys.objects"
+            "smalldatetime", "time", "getdate", "else", "float", "while", "cursor", "count", "sum", "min", "max", "avg", "top", "into", "xml", "json", "out", "partition", "ntext", "text", "ansi_nulls", "table"
         };
-        static string Version => "1.0.1";
+        static List<string> excludeSchemas = new List<string>
+        {
+            "sys"
+        };
+        static string Version => "1.1.0";
         static string[] ExcludedFolders;
         static string[] ExcludedNames;
         static string basePath;
         static bool Debugging;
         static string DependenciesFile = "dependencies.json";
+        static bool EqualsOIC(string a, string b)
+        {
+            return string.Compare(a, b, StringComparison.OrdinalIgnoreCase) == 0;
+        }
+        static bool ContainsOIC(string a, params string[] b)
+        {
+            var result = false;
+
+            if (b != null && b.Length > 0)
+            {
+                foreach (var x in b)
+                {
+                    result = a.IndexOf(x, StringComparison.OrdinalIgnoreCase) > 0;
+
+                    if (result)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            return result;
+        }
         enum PurifySqlStates
         {
             start,
@@ -219,9 +245,15 @@ namespace SqlGenerator.DependencyExtractor
 
                 var n = name.ToLower();
 
-                if (excludeNames.IndexOf(n) < 0 && result.IndexOf(n) < 0)
+                if (result.IndexOf(n) < 0)
                 {
-                    result.Add(n);
+                    var dotIndex = n.IndexOf(".");
+                    var schema = dotIndex > 0 ? n.Substring(0, i).ToLower(): "";
+                    
+                    if (excludeNames.IndexOf(n) < 0 && excludeSchemas.IndexOf(schema) < 0)
+                    {
+                        result.Add(n);
+                    }
                 }
                 //Console.WriteLine($"{info} ch: {ch}, name: {name}");
                 name = "";
@@ -557,11 +589,11 @@ namespace SqlGenerator.DependencyExtractor
                 {
                     Debug($"Finding dependencies ...");
 
-                    var isType = obj.FilePath.IndexOf("\\types\\", StringComparison.OrdinalIgnoreCase) > 0;
+                    var isType = ContainsOIC(obj.FilePath, "\\types\\");
 
                     foreach (var x in allItems.Where(item => item.Name != obj.Name))
                     {
-                        if (isType && (x.FilePath.IndexOf("\\tables\\", StringComparison.OrdinalIgnoreCase) > 0 || x.FilePath.IndexOf("\\procedures\\", StringComparison.OrdinalIgnoreCase) > 0 || x.FilePath.IndexOf("\\functions\\", StringComparison.OrdinalIgnoreCase) > 0))
+                        if (isType && ContainsOIC(x.FilePath, "\\tables\\", "\\procedures\\", "\\functions\\"))
                         {
                             continue;
                         }
@@ -571,7 +603,7 @@ namespace SqlGenerator.DependencyExtractor
 
                         foreach (var name in names)
                         {
-                            if (string.Compare(x.Name, name, StringComparison.OrdinalIgnoreCase) == 0 || string.Compare(name, pureName, StringComparison.OrdinalIgnoreCase) == 0)
+                            if (EqualsOIC(x.Name, name) || EqualsOIC(name, pureName))
                             {
                                 obj.Dependencies.Add(x.Name);
 
