@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -27,7 +28,7 @@ namespace SqlGenerator.DependencyExtractor
         {
             "sys"
         };
-        static string Version => "1.1.0";
+        static string Version => "1.1.1";
         static string[] ExcludedFolders;
         static string[] ExcludedNames;
         static string basePath;
@@ -248,8 +249,8 @@ namespace SqlGenerator.DependencyExtractor
                 if (result.IndexOf(n) < 0)
                 {
                     var dotIndex = n.IndexOf(".");
-                    var schema = dotIndex > 0 ? n.Substring(0, i).ToLower(): "";
-                    
+                    var schema = dotIndex > 0 ? n.Substring(0, dotIndex).ToLower() : "";
+
                     if (excludeNames.IndexOf(n) < 0 && excludeSchemas.IndexOf(schema) < 0)
                     {
                         result.Add(n);
@@ -260,298 +261,306 @@ namespace SqlGenerator.DependencyExtractor
                 state = ParseSqlStates.start;
             }
 
-            while (i < content.Length)
+            try
             {
-                if (lastCh.HasValue)
+                while (i < content.Length)
                 {
-                    ch = lastCh.Value;
-                    lastCh = null;
-                }
-                else
-                {
-                    ch = content[i++];
-                }
+                    if (lastCh.HasValue)
+                    {
+                        ch = lastCh.Value;
+                        lastCh = null;
+                    }
+                    else
+                    {
+                        ch = content[i++];
+                    }
 
-                switch (state)
-                {
-                    case ParseSqlStates.start:
-                        switch (ch)
-                        {
-                            case '-':
-                                state = ParseSqlStates.BSC;
-                                break;
-                            case '/':
-                                state = ParseSqlStates.BMC;
-                                break;
-                            case '\'':
-                                state = ParseSqlStates.BS;
-                                break;
-                            case '[':
-                                state = ParseSqlStates.D1;
-                                break;
-                            default:
-                                if (char.IsWhiteSpace(ch))
-                                {
-                                    state = ParseSqlStates.BWS;
-                                }
-                                else
-                                {
-                                    if (IsNameStarting(ch))
+                    switch (state)
+                    {
+                        case ParseSqlStates.start:
+                            switch (ch)
+                            {
+                                case '-':
+                                    state = ParseSqlStates.BSC;
+                                    break;
+                                case '/':
+                                    state = ParseSqlStates.BMC;
+                                    break;
+                                case '\'':
+                                    state = ParseSqlStates.BS;
+                                    break;
+                                case '[':
+                                    state = ParseSqlStates.D1;
+                                    break;
+                                default:
+                                    if (char.IsWhiteSpace(ch))
                                     {
-                                        state = ParseSqlStates.D7;
-                                        name += ch;
+                                        state = ParseSqlStates.BWS;
                                     }
-                                }
+                                    else
+                                    {
+                                        if (IsNameStarting(ch))
+                                        {
+                                            state = ParseSqlStates.D7;
+                                            name += ch;
+                                        }
+                                    }
 
-                                break;
-                        }
+                                    break;
+                            }
 
-                        break;
-                    case ParseSqlStates.BSC:
-                        if (ch == '-')
-                        {
-                            state = ParseSqlStates.SCB;
-                        }
-                        else
-                        {
-                            state = ParseSqlStates.start;
-                            lastCh = ch;
-                        }
-                        break;
-                    case ParseSqlStates.SCB:
-                        if (ch == '\r' || ch == '\n')
-                        {
-                            state = ParseSqlStates.start;
-                        }
-                        break;
-                    case ParseSqlStates.BMC:
-                        if (ch == '*')
-                        {
-                            state = ParseSqlStates.MCB;
-                        }
-                        else
-                        {
-                            state = ParseSqlStates.start;
-                            lastCh = ch;
-                        }
-                        break;
-                    case ParseSqlStates.MCB:
-                        if (ch == '*')
-                        {
-                            state = ParseSqlStates.EMC;
-                        }
-                        break;
-                    case ParseSqlStates.EMC:
-                        if (ch == '/')
-                        {
-                            state = ParseSqlStates.start;
-                        }
-                        else
-                        {
-                            state = ParseSqlStates.MCB;
-                            lastCh = ch;
-                        }
-                        break;
-                    case ParseSqlStates.BS:
-                        if (ch == '\'')
-                        {
-                            state = ParseSqlStates.AIS;
-                        }
-                        break;
-                    case ParseSqlStates.AIS:
-                        if (ch == '\'')
-                        {
-                            state = ParseSqlStates.BS;
-                        }
-                        else
-                        {
-                            state = ParseSqlStates.start;
-                            lastCh = ch;
-                        }
-                        break;
-                    case ParseSqlStates.BWS:
-                        if (!char.IsWhiteSpace(ch))
-                        {
-                            lastCh = ch;
-                            state = ParseSqlStates.start;
-                        }
-                        break;
-                    case ParseSqlStates.D1:
-                        if (ch == ']')
-                        {
-                            state = ParseSqlStates.D3;
-                        }
-                        else
-                        {
-                            name += ch;
-                        }
-                        break;
-                    case ParseSqlStates.D3:
-                        if (IsNameStarting(ch))
-                        {
-                            state = ParseSqlStates.D32;
-                            name += '.' + ch;
-                        }
-                        else if (ch == '.')
-                        {
-                            state = ParseSqlStates.D31;
-                            name += '.';
-                        }
-                        else if (ch == '[')
-                        {
-                            state = ParseSqlStates.D4;
-                            result.Add(name);
-                            name = "";
-                        }
-                        else if (char.IsWhiteSpace(ch))
-                        {
-                            state = ParseSqlStates.D3;
-                        }
-                        else
-                        {
-                            Finish(true, "D3");
-                        }
-                        break;
-                    case ParseSqlStates.D31:
-                        if (char.IsWhiteSpace(ch))
-                        {
-                            state = ParseSqlStates.D31;
-                        }
-                        else if (IsNameStarting(ch))
-                        {
-                            state = ParseSqlStates.D32;
-                            name += ch;
-                        }
-                        else if (ch == '[')
-                        {
-                            state = ParseSqlStates.D4;
-                        }
-                        else
-                        {
-                            Finish(true, "D31");
-                        }
-                        break;
-                    case ParseSqlStates.D32:
-                        if (IsInName(ch))
-                        {
-                            name += ch;
-                        }
-                        else if (ch == '.')
-                        {
-                            name += '.';
-                            state = ParseSqlStates.D51;
-                        }
-                        else
-                        {
-                            Finish(true, "D32");
-                        }
-                        break;
-                    case ParseSqlStates.D4:
-                        if (ch == ']')
-                        {
-                            state = ParseSqlStates.D5;
-                        }
-                        else
-                        {
-                            name += ch;
-                        }
-                        break;
-                    case ParseSqlStates.D5:
-                        if (ch == '.')
-                        {
-                            state = ParseSqlStates.D51;
-                            name += '.';
-                        }
-                        else if (ch == '[')
-                        {
-                            state = ParseSqlStates.D6;
-                            result.Add(name);
-                            name = "";
-                        }
-                        else
-                        {
-                            Finish(true, "D5");
-                        }
-                        break;
-                    case ParseSqlStates.D51:
-                        if (IsNameStarting(ch))
-                        {
-                            name += ch;
-                            state = ParseSqlStates.D52;
-                        }
-                        else if (ch == '[')
-                        {
-                            state = ParseSqlStates.D6;
-                        }
-                        else
-                        {
-                            Finish(true, "D51");
-                        }
-                        break;
-                    case ParseSqlStates.D52:
-                        if (IsInName(ch))
-                        {
-                            name += ch;
-                        }
-                        else
-                        {
-                            Finish(true, "D52");
-                        }
-                        break;
-                    case ParseSqlStates.D6:
-                        if (ch == ']')
-                        {
-                            Finish(false, "D6");
-                        }
-                        else
-                        {
-                            name += ch;
-                        }
-                        break;
-                    case ParseSqlStates.D7:
-                        if (IsInName(ch))
-                        {
-                            name += ch;
-                        }
-                        else if (ch == '.')
-                        {
-                            name += '.';
-                            state = ParseSqlStates.D31;
-                        }
-                        else if (ch == '[')
-                        {
-                            state = ParseSqlStates.D4;
-                        }
-                        else if (char.IsWhiteSpace(ch))
-                        {
-                            state = ParseSqlStates.D71;
-                        }
-                        else
-                        {
-                            Finish(true, "D7");
-                        }
-                        break;
-                    case ParseSqlStates.D71:
-                        if (ch == '.')
-                        {
-                            name += '.';
-                            state = ParseSqlStates.D31;
-                        }
-                        if (char.IsWhiteSpace(ch))
-                        {
-                            state = ParseSqlStates.D71;
-                        }
-                        else
-                        {
-                            Finish(true, "D71");
-                        }
-                        break;
+                            break;
+                        case ParseSqlStates.BSC:
+                            if (ch == '-')
+                            {
+                                state = ParseSqlStates.SCB;
+                            }
+                            else
+                            {
+                                state = ParseSqlStates.start;
+                                lastCh = ch;
+                            }
+                            break;
+                        case ParseSqlStates.SCB:
+                            if (ch == '\r' || ch == '\n')
+                            {
+                                state = ParseSqlStates.start;
+                            }
+                            break;
+                        case ParseSqlStates.BMC:
+                            if (ch == '*')
+                            {
+                                state = ParseSqlStates.MCB;
+                            }
+                            else
+                            {
+                                state = ParseSqlStates.start;
+                                lastCh = ch;
+                            }
+                            break;
+                        case ParseSqlStates.MCB:
+                            if (ch == '*')
+                            {
+                                state = ParseSqlStates.EMC;
+                            }
+                            break;
+                        case ParseSqlStates.EMC:
+                            if (ch == '/')
+                            {
+                                state = ParseSqlStates.start;
+                            }
+                            else
+                            {
+                                state = ParseSqlStates.MCB;
+                                lastCh = ch;
+                            }
+                            break;
+                        case ParseSqlStates.BS:
+                            if (ch == '\'')
+                            {
+                                state = ParseSqlStates.AIS;
+                            }
+                            break;
+                        case ParseSqlStates.AIS:
+                            if (ch == '\'')
+                            {
+                                state = ParseSqlStates.BS;
+                            }
+                            else
+                            {
+                                state = ParseSqlStates.start;
+                                lastCh = ch;
+                            }
+                            break;
+                        case ParseSqlStates.BWS:
+                            if (!char.IsWhiteSpace(ch))
+                            {
+                                lastCh = ch;
+                                state = ParseSqlStates.start;
+                            }
+                            break;
+                        case ParseSqlStates.D1:
+                            if (ch == ']')
+                            {
+                                state = ParseSqlStates.D3;
+                            }
+                            else
+                            {
+                                name += ch;
+                            }
+                            break;
+                        case ParseSqlStates.D3:
+                            if (IsNameStarting(ch))
+                            {
+                                state = ParseSqlStates.D32;
+                                name += '.' + ch;
+                            }
+                            else if (ch == '.')
+                            {
+                                state = ParseSqlStates.D31;
+                                name += '.';
+                            }
+                            else if (ch == '[')
+                            {
+                                state = ParseSqlStates.D4;
+                                result.Add(name);
+                                name = "";
+                            }
+                            else if (char.IsWhiteSpace(ch))
+                            {
+                                state = ParseSqlStates.D3;
+                            }
+                            else
+                            {
+                                Finish(true, "D3");
+                            }
+                            break;
+                        case ParseSqlStates.D31:
+                            if (char.IsWhiteSpace(ch))
+                            {
+                                state = ParseSqlStates.D31;
+                            }
+                            else if (IsNameStarting(ch))
+                            {
+                                state = ParseSqlStates.D32;
+                                name += ch;
+                            }
+                            else if (ch == '[')
+                            {
+                                state = ParseSqlStates.D4;
+                            }
+                            else
+                            {
+                                Finish(true, "D31");
+                            }
+                            break;
+                        case ParseSqlStates.D32:
+                            if (IsInName(ch))
+                            {
+                                name += ch;
+                            }
+                            else if (ch == '.')
+                            {
+                                name += '.';
+                                state = ParseSqlStates.D51;
+                            }
+                            else
+                            {
+                                Finish(true, "D32");
+                            }
+                            break;
+                        case ParseSqlStates.D4:
+                            if (ch == ']')
+                            {
+                                state = ParseSqlStates.D5;
+                            }
+                            else
+                            {
+                                name += ch;
+                            }
+                            break;
+                        case ParseSqlStates.D5:
+                            if (ch == '.')
+                            {
+                                state = ParseSqlStates.D51;
+                                name += '.';
+                            }
+                            else if (ch == '[')
+                            {
+                                state = ParseSqlStates.D6;
+                                result.Add(name);
+                                name = "";
+                            }
+                            else
+                            {
+                                Finish(true, "D5");
+                            }
+                            break;
+                        case ParseSqlStates.D51:
+                            if (IsNameStarting(ch))
+                            {
+                                name += ch;
+                                state = ParseSqlStates.D52;
+                            }
+                            else if (ch == '[')
+                            {
+                                state = ParseSqlStates.D6;
+                            }
+                            else
+                            {
+                                Finish(true, "D51");
+                            }
+                            break;
+                        case ParseSqlStates.D52:
+                            if (IsInName(ch))
+                            {
+                                name += ch;
+                            }
+                            else
+                            {
+                                Finish(true, "D52");
+                            }
+                            break;
+                        case ParseSqlStates.D6:
+                            if (ch == ']')
+                            {
+                                Finish(false, "D6");
+                            }
+                            else
+                            {
+                                name += ch;
+                            }
+                            break;
+                        case ParseSqlStates.D7:
+                            if (IsInName(ch))
+                            {
+                                name += ch;
+                            }
+                            else if (ch == '.')
+                            {
+                                name += '.';
+                                state = ParseSqlStates.D31;
+                            }
+                            else if (ch == '[')
+                            {
+                                state = ParseSqlStates.D4;
+                            }
+                            else if (char.IsWhiteSpace(ch))
+                            {
+                                state = ParseSqlStates.D71;
+                            }
+                            else
+                            {
+                                Finish(true, "D7");
+                            }
+                            break;
+                        case ParseSqlStates.D71:
+                            if (ch == '.')
+                            {
+                                name += '.';
+                                state = ParseSqlStates.D31;
+                            }
+                            if (char.IsWhiteSpace(ch))
+                            {
+                                state = ParseSqlStates.D71;
+                            }
+                            else
+                            {
+                                Finish(true, "D71");
+                            }
+                            break;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(name))
+                {
+                    result.Add(name);
                 }
             }
-
-            if (!string.IsNullOrEmpty(name))
+            catch (Exception e)
             {
-                result.Add(name);
+                Debug("Parse Error", e);
+                throw;
             }
 
             return result.ToArray();
@@ -623,16 +632,23 @@ namespace SqlGenerator.DependencyExtractor
                 Console.WriteLine(msg);
             }
         }
-        static void Log(string msg, Exception e = null)
+        static void Log(string msg, Exception e = null,
+                                [CallerMemberName] string memberName = "",
+                                [CallerFilePath] string sourceFilePath = "",
+                                [CallerLineNumber] int sourceLineNumber = 0)
         {
             Console.WriteLine(msg);
 
             if (e != null)
             {
                 Console.WriteLine("\t" + e.ToString("\t\n"));
+                Console.WriteLine("\t" + memberName + "\n\t" + sourceLineNumber);
             }
         }
-        static void Debug(string msg, Exception e = null)
+        static void Debug(string msg, Exception e = null,
+                                [CallerMemberName] string memberName = "",
+                                [CallerFilePath] string sourceFilePath = "",
+                                [CallerLineNumber] int sourceLineNumber = 0)
         {
             if (Debugging)
             {
@@ -641,6 +657,7 @@ namespace SqlGenerator.DependencyExtractor
                 if (e != null)
                 {
                     Console.WriteLine("\t" + e.ToString("\t\n"));
+                    Console.WriteLine("\t" + memberName + "\n\t" + sourceLineNumber);
                 }
             }
         }
