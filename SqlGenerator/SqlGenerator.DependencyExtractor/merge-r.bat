@@ -5,7 +5,7 @@ IF "%~1"=="" (
 ) ELSE (
 	IF NOT EXIST Builds MD Builds
 	IF NOT EXIST Builds\%1 MD Builds\%1
-	IF NOT EXIST Builds\%1\release MD Builds\%1\release
+	IF NOT EXIST Builds\%1\Release MD Builds\%1\Release
 
 	ECHO Merging ...
 

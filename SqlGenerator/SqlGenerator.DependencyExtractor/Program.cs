@@ -28,7 +28,7 @@ namespace SqlGenerator.DependencyExtractor
         {
             "sys"
         };
-        static string Version => "1.1.1";
+        static string Version => "1.2.2";
         static string[] ExcludedFolders;
         static string[] ExcludedNames;
         static string basePath;
@@ -675,6 +675,7 @@ Usage:
     -nw   :   do not overwrite existing dependencies file
     -s    :   silent
     -sdf  :   skip existing dependencies file
+    -nxdf :   do not extend dependency file
     -debug:   debug mode
 ");
         }
@@ -782,6 +783,7 @@ Usage:
                 var sourceFolder = "Scripts";
                 var overwriteExisting = true;
                 var skipExistingDependencies = false;
+                var doNotExtendDependencyFile = false;
 
                 foreach (var arg in args)
                 {
@@ -814,6 +816,12 @@ Usage:
                         if (arg.ToLower() == "-nw")
                         {
                             overwriteExisting = false;
+                            continue;
+                        }
+
+                        if (arg.ToLower() == "-nxdf")
+                        {
+                            doNotExtendDependencyFile = true;
                             continue;
                         }
 
@@ -911,8 +919,17 @@ Usage:
                             Log($"Gathering List of Objects ...");
 
                             allItems = files.Where(x => !IsExcluded(x)).Select(x => new SqlObject { FilePath = x.Replace(basePath + "\\", ""), Name = Path.GetFileNameWithoutExtension(x) }).ToList();
-                            items = allItems.Where(x => !existingItems.Exists(item => string.Compare(item.FilePath, x.FilePath, true) == 0)).ToList();
 
+                            if (doNotExtendDependencyFile)
+                            {
+                                items = existingItems.ToList();
+                            }
+                            else
+                            {
+                                items = allItems.Where(x => !existingItems.Exists(item => string.Compare(item.FilePath, x.FilePath, true) == 0)).ToList();
+                            }
+
+                            Log($"Do Not Extend Dependency File: {doNotExtendDependencyFile}");
                             Log(string.Format("All Objects: {0}\n", allItems.Count));
                             Log(string.Format("Total Objects: {0}\n", items.Count));
 
