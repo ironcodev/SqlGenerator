@@ -45,7 +45,7 @@ namespace SqlGenerator.Console
             }
         }
         #endregion
-        static string Version => "2.1.0";
+        static string Version => "2.1.1";
         static void Help()
         {
             Log($@"SQL Script Generator v{Version}
@@ -177,6 +177,7 @@ Example:
             return result;
         }
         static int? percentTop;
+        static int progLast;
         static int tempTop;
         static int tempLeft;
         static double? step;
@@ -207,10 +208,16 @@ Example:
                 tempTop = System.Console.CursorTop;
 
                 System.Console.SetCursorPosition(System.Console.WindowWidth / 2 - 10, percentTop.Value);
-                System.Console.Write($"1 / {args.Count}");
+                System.Console.Write($"1 / {args.Count}           ");
 
                 System.Console.SetCursorPosition(0, tempTop + 1);
-                System.Console.Write($"{title}{Repeat("░", System.Console.WindowWidth - title.Length - 1)}");
+
+                var progBar = Repeat("░", System.Console.WindowWidth - title.Length - 1);
+                
+                System.Console.Write($"{title}{progBar}");
+                
+                progLast = System.Console.CursorLeft;
+                
                 System.Console.SetCursorPosition(title.Length, tempTop + 1);
             }
             else
@@ -236,12 +243,18 @@ Example:
 
                 if (inc >= 1)
                 {
-                    System.Console.Write("▓");
+                    System.Console.Write(Repeat("▓", inc));
                 }
 
                 if (args.Index == args.Count - 1)
                 {
                     step = null;
+                    floatRemained = 0;
+
+                    if (System.Console.CursorLeft < progLast)
+                    {
+                        System.Console.Write(Repeat("▓", progLast - System.Console.CursorLeft));
+                    }
                     //percentTop = null;
 
                     //System.Console.WriteLine();
@@ -498,7 +511,7 @@ Example:
                             {
                                 var data = generator.Count(type, subType, keyword);
 
-                                Log(string.Format("Number of Objects in the Database '{0}'", generator.Options.Db));
+                                Log(string.Format("Number of Objects in '{0} Database'", generator.Options.Db));
                                 Log(string.Format("\tObject Type: {0}", type));
 
                                 if (!string.IsNullOrEmpty(keyword))
