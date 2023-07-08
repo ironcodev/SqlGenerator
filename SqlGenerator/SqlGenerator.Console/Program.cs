@@ -16,9 +16,9 @@ namespace SqlGenerator.Console
         static string[] options = new string[] { };
         #region Main Logger
         static ConsoleLogger Logger => new ConsoleLogger { Format = "{data}" };
-        static void Log(string data)
+        static void Log(string data, bool show = true)
         {
-            if (!Silent)
+            if (!Silent && show)
             {
                 Logger.Log(data);
             }
@@ -45,7 +45,7 @@ namespace SqlGenerator.Console
             }
         }
         #endregion
-        static string Version => "2.0.0";
+        static string Version => "2.1.0";
         static void Help()
         {
             Log($@"SQL Script Generator v{Version}
@@ -55,7 +55,7 @@ Usage: sqlgen.exe [args]
         -c  specify connectionstring
         -d  specify database
         -s  silent
-        -o  options filename (default = 'sqlgen.options')
+        -of options filename (default = 'sqlgen.options')
         -t  specify object types to generate script for. possible values are
                 Table, Sproc, Udf, Type, Trigger, Index, View, Constraint, FileGroup, File
                 Partition, Assembly, Rule, Sequence, Diagram, Schema, User, Role, Synonym, 
@@ -78,6 +78,8 @@ Usage: sqlgen.exe [args]
         -k  keyword filter
         -nw  do not overwrite existing files.
         -i  show report regarding selected object types
+        -np do not show progress
+        -debug:   debug mode
 Example:
     sqlgen.exe -c ""Server=.;Database=MyDb;User Id=myuser;Password=mypass"" -t Sproc
     sqlgen.exe -c ""Server=.;Database=MyDb;User Id=myuser;Password=mypass"" -t Sproc -w console
@@ -174,6 +176,78 @@ Example:
 
             return result;
         }
+        static int? percentTop;
+        static int tempTop;
+        static int tempLeft;
+        static double? step;
+        static double floatRemained;
+        static void OnGenerate(ISqlGenerator source, SqlGeneratorOnGenerateEventArgs args)
+        {
+            var title = $"{args.Type}, {args.SubType}: ";
+            
+            if (!step.HasValue)
+            {
+                if (args.Count > 0)
+                {
+                    step = (System.Console.WindowWidth * 1.0 - title.Length - 1) / args.Count * 1.0;
+                }
+                else
+                {
+                    step = 0;
+                }
+            }
+
+            if (args.Index == 0)
+            {
+                if (!percentTop.HasValue)
+                {
+                    percentTop = System.Console.CursorTop;
+                }
+
+                tempTop = System.Console.CursorTop;
+
+                System.Console.SetCursorPosition(System.Console.WindowWidth / 2 - 10, percentTop.Value);
+                System.Console.Write($"1 / {args.Count}");
+
+                System.Console.SetCursorPosition(0, tempTop + 1);
+                System.Console.Write($"{title}{Repeat("░", System.Console.WindowWidth - title.Length - 1)}");
+                System.Console.SetCursorPosition(title.Length, tempTop + 1);
+            }
+            else
+            {
+                tempTop = System.Console.CursorTop;
+                tempLeft = System.Console.CursorLeft;
+
+                var progInc = step.Value + floatRemained;
+                var inc = (int)Math.Floor(progInc);
+
+                if (inc >= 1)
+                {
+                    floatRemained = progInc - inc;
+                }
+                else
+                {
+                    floatRemained = progInc;
+                }
+
+                System.Console.SetCursorPosition(System.Console.WindowWidth / 2 - 10, percentTop.Value);
+                System.Console.Write($"{args.Index + 1} / {args.Count}");
+                System.Console.SetCursorPosition(tempLeft, tempTop);
+
+                if (inc >= 1)
+                {
+                    System.Console.Write("▓");
+                }
+
+                if (args.Index == args.Count - 1)
+                {
+                    step = null;
+                    //percentTop = null;
+
+                    //System.Console.WriteLine();
+                }
+            }
+        }
         static void Start(string[] args)
         {
             if (args == null || args.Length == 0)
@@ -193,8 +267,10 @@ Example:
                 var outputPath = "";
                 var keyword = "";
                 var optionsFileName = "";
+                var showProgress = true;
                 bool? overwriteExisting = null;
                 var showInfo = false;
+                var debug = false;
 
                 for (var i = 0; i < args.Length; i++)
                 {
@@ -203,8 +279,12 @@ Example:
                     switch (args[i])
                     {
                         case "-v":
-                            Log($"SQL Script Generator v{Version}");
+                            System.Console.WriteLine($"SQL Script Generator v{Version}");
                             ok = false;
+
+                            break;
+                        case "-debug":
+                            debug = true;
 
                             break;
                         case "-c":
@@ -226,7 +306,7 @@ Example:
                             {
                                 if (!Enum.TryParse(args[i + 1], true, out type))
                                 {
-                                    Log($@"Invalid object type. possible values are
+                                    System.Console.WriteLine($@"Invalid object type. possible values are
     Table, Sproc, Udf, Type, Trigger, Index, View, Constraint, FileGroup, File
     Partition, Assembly, Rule, Sequence, Diagram, Schema, User, Role, Synonym, 
     Permission, Key, Certificate, SecurityPolicy, Audit, Default, Database");
@@ -236,7 +316,7 @@ Example:
                             }
 
                             break;
-                        case "-o":
+                        case "-of":
                             if (i + 1 < args.Length && args[i + 1][0] != '-')
                             {
                                 optionsFileName = args[i + 1];
@@ -289,7 +369,7 @@ Example:
                             {
                                 if (!Enum.TryParse(args[i + 1], true, out generateType))
                                 {
-                                    Log($@"Invalid script generation type. possible values are Drop, Create, DropCreate");
+                                    System.Console.WriteLine($@"Invalid script generation type. possible values are Drop, Create, DropCreate");
 
                                     ok = false;
                                 }
@@ -316,6 +396,10 @@ Example:
                             overwriteExisting = false;
 
                             break;
+                        case "-np":
+                            showProgress = false;
+
+                            break;
                         case "-s":
                             Silent = true;
 
@@ -334,7 +418,7 @@ Example:
                         default:
                             if (arg.Length > 0 && arg[0] == '-')
                             {
-                                Log($"Invalid argument {arg}");
+                                System.Console.WriteLine($"Invalid argument {arg}");
                             }
 
                             break;
@@ -389,17 +473,17 @@ Example:
                             }
                             if (string.IsNullOrEmpty(generator.Options.ConnectionString))
                             {
-                                Log($"Please specify database connection string");
+                                System.Console.WriteLine($"Please specify database connection string");
                                 break;
                             }
                             if (type == SqlObjectType.None)
                             {
-                                Log($"Please specify what objects you intend their scripts be generated. (use -t and optional -st switches)");
+                                System.Console.WriteLine($"Please specify what objects you intend their scripts be generated. (use -t and optional -st switches)");
                                 break;
                             }
                             if (generateType == GenerationType.NotSpecified && !showInfo)
                             {
-                                Log($"Please specify how scrpipts should be generated. possible values are Drop, Create, DropCreate.");
+                                System.Console.WriteLine($"Please specify how scrpipts should be generated. possible values are Drop, Create, DropCreate.");
                                 break;
                             }
                             if (!TestConnection(generator.Options.ConnectionString))
@@ -436,13 +520,18 @@ Example:
                             else
                             {
                                 Log("Script genertion started ...\n");
-                                Log("Logger= " + logger.GetType().Name);
-                                Log("Writer= " + writer.GetType().Name + "\n");
+                                Log("Logger= " + logger.GetType().Name, debug);
+                                Log("Writer= " + writer.GetType().Name + "\n", debug);
+
+                                if (showProgress)
+                                {
+                                    (generator as ISqlGenerator).OnGenerate +=  OnGenerate;
+                                }
 
                                 generator.Generate(generateType, type, subType, keyword);
                             }
 
-                            Log("Done.");
+                            Log("\nDone.");
                         }
                         catch (Exception e)
                         {
@@ -452,10 +541,47 @@ Example:
                 }
             }
         }
+        static string Repeat(string x, int count)
+        {
+            var result = new StringBuilder();
+
+            for (var i = 0; i < count; i++)
+            {
+                result.Append(x);
+            }
+
+            return result.ToString();
+        }
+        static void test_progress()
+        {
+            System.Console.WriteLine($"cursor is at {System.Console.CursorTop}, {System.Console.CursorLeft}");
+            System.Console.WriteLine($"screen size: width x height {System.Console.WindowWidth}x{System.Console.WindowHeight}");
+            System.Console.WriteLine();
+            System.Console.SetCursorPosition(System.Console.WindowWidth / 2 - 6, System.Console.CursorTop - 1);
+            System.Console.Write("0 / 100%");
+            System.Console.WriteLine();
+            System.Console.WriteLine(Repeat("░", System.Console.WindowWidth));
+            System.Console.SetCursorPosition(0, System.Console.CursorTop - 2);
+
+            var step = 100 / System.Console.WindowWidth;
+
+            for (var i = 0; i < System.Console.WindowWidth; i++)
+            {
+                var top = System.Console.CursorTop;
+
+                System.Console.SetCursorPosition(i, top);
+                System.Console.Write("▓");
+                System.Console.SetCursorPosition(System.Console.WindowWidth / 2 - 6, top - 1);
+                System.Console.Write($"{i} / 100%");
+                System.Console.SetCursorPosition(i, top);
+                Task.Delay(100).Wait();
+            }
+            //System.Console.OutputEncoding = System.Text.Encoding.GetEncoding(28591);
+        }
         static void Main(string[] args)
         {
             Start(args);
-
+            
             //System.Console.ReadKey();
         }
     }

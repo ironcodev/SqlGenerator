@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.SqlClient;
 using System.IO;
 using System.Text;
+using System.Linq;
 
 namespace SqlGenerator.Services
 {
@@ -20,7 +21,29 @@ namespace SqlGenerator.Services
 			Logger = logger;
 			Writer = writer;
 		}
-		private SqlGeneratorOptionsBase options;
+		event SqlGeneratorOnGenerateEventHandler _OnGenerate;
+		object objectLock = new Object();
+
+		event SqlGeneratorOnGenerateEventHandler ISqlGenerator.OnGenerate
+        {
+            add
+            {
+				lock (objectLock)
+				{
+					_OnGenerate += value;
+				}
+			}
+
+            remove
+            {
+				lock (objectLock)
+				{
+					_OnGenerate -= value;
+				}
+			}
+        }
+
+        private SqlGeneratorOptionsBase options;
         public SqlGeneratorOptionsBase Options
         {
             get
@@ -167,11 +190,13 @@ namespace SqlGenerator.Services
 				Directory.CreateDirectory(Options.OutputPath + path);
 			}
 		}
-		private void Generate(string path, GenerationType generateType, SqlObjectType type, string nativeType, string keyword)
+		private void Generate(string path, GenerationType generateType, SqlObjectType type, object subType, string nativeType, string keyword)
 		{
 			try
 			{
 				Logger.Log($"-------------------------------------------------------------");
+
+				var count = CountInternal(type, subType, keyword);
 
 				if (!string.IsNullOrEmpty(nativeType))
 				{
@@ -195,6 +220,8 @@ namespace SqlGenerator.Services
 
 							using (var reader = cmd.ExecuteReader())
 							{
+								var i = 0;
+
 								while (reader.Read())
 								{
 									var schema = reader[0]?.ToString();
@@ -236,6 +263,17 @@ go
 
 									if (!error)
 									{
+										_OnGenerate?.Invoke(this, new SqlGeneratorOnGenerateEventArgs
+										{
+											Type = type,
+											SubType = subType,
+											Keyword = keyword,
+											Count = count.Value,
+											Index = i,
+											Schema = schema,
+											Name = name,
+										});
+
 										Writer.Options = new FileScriptWriterOptions
 										{
 											FileName = schema + "." + name + ".sql",
@@ -254,6 +292,8 @@ go
 											Logger.Log($"generaing {schema}.{name} skipped");
 										}
 									}
+
+									i++;
 								}
 							}
 						}
@@ -283,7 +323,7 @@ go
 
 				CreateDir(path);
 
-				Generate(path, generateType, type, nativeType, keyword);
+				Generate(path, generateType, type, subType, nativeType, keyword);
 			}
 		}
 		private void GenerateAll(GenerationType generateType, SqlObjectType type, Type subType, string keyword)
@@ -456,6 +496,7 @@ go
 			else
 			{
 				var count = Count(nativeType, keyword);
+
 				result = new KeyValuePair<string, int>(subType.ToString(), count);
 			}
 
@@ -576,6 +617,8 @@ go
 
 			return result;
 		}
-		#endregion
-	}
+
+        
+        #endregion
+    }
 }
